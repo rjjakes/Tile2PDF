@@ -28,9 +28,27 @@ scolor.rgb.hexValue = '000000';
 // define the opacity to use
 var useopacity = 10;
 
-// adds an alignment corner to a document
-function addCorner (thisDoc, position, widthpx, heightpx) {
+/**
+ * Self explanatory.
+ */
+function WaitForRedraw() {
+  var eventWait = charIDToTypeID("Wait");
+  var enumRedrawComplete = charIDToTypeID("RdCm");
+  var typeState = charIDToTypeID("Stte");
+  var keyState = charIDToTypeID("Stte");
+  var desc = new ActionDescriptor();
+  desc.putEnumerated(keyState, typeState, enumRedrawComplete);
+  executeAction(eventWait, desc, DialogModes.NO)
+}
 
+/**
+ * adds an alignment corner to a document
+ * @param thisDoc
+ * @param position
+ * @param widthpx
+ * @param heightpx
+ */
+function addCorner (thisDoc, position, widthpx, heightpx) {
 
   // create the layer and fill it in
   var cornerLayer = thisDoc.artLayers.add();
@@ -90,6 +108,7 @@ function addCorner (thisDoc, position, widthpx, heightpx) {
 function processImage () {
   // all the strings that need localized
   //var strDeleteAllEmptyLayersHistoryStepName = localize("$$$/JavaScripts/DeleteAllEmptyLayers/Menu=Delete All Empty Layers" );
+  WaitForRedraw();
 
   // define the destination doc/tile size
   var dwidth = 6.71;
@@ -238,10 +257,11 @@ function processImage () {
   app.preferences.rulerUnits = originalUnit;
 
   // run the PDF Presentation automation
+  WaitForRedraw();
+
   var outputFile = File(docRef.path + '/' + docRef.name + '.pdf');
 
   var options = new PresentationOptions;
-
   makePDFPresentation(tempFileList, outputFile, options);
 
   // delete all the temporary image files
