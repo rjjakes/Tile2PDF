@@ -105,6 +105,120 @@ function addCorner (thisDoc, position, widthpx, heightpx) {
 
 }
 
+/**
+ * creates a page showing a numbered schematic of how the tiles fit together,
+ * with the source image shown across the tiles
+ * @param docRef the (flattened) source document
+ * @param countx
+ * @param county
+ * @param dwidth tile width in inches
+ * @param dheight tile height in inches
+ * @param w source width in inches
+ * @param h source height in inches
+ * @returns the schematic document
+ */
+function makeSchematic (docRef, countx, county, dwidth, dheight, w, h) {
+
+  var resolution = docRef.resolution;
+
+  var savedUnit = preferences.rulerUnits;
+  preferences.rulerUnits = Units.PIXELS;
+
+  // page size in pixels
+  var pw = dwidth * resolution;
+  var ph = dheight * resolution;
+
+  // scale the full grid of whole tiles (in inches) to at most 52% of the page width and 68% of its height,
+  // centre it horizontally and keep it near the top
+  var gridw = countx * dwidth;
+  var gridh = county * dheight;
+  var scale = Math.min(0.52 * pw / gridw, 0.68 * ph / gridh);
+  var ox = Math.round((pw - gridw * scale) / 2);
+  var oy = Math.round(ph * 0.075);
+
+  // copy a scaled down version of the source image
+  var thumbDoc = docRef.duplicate('schematic-thumb');
+  thumbDoc.resizeImage(UnitValue(Math.round(w * scale), 'px'), UnitValue(Math.round(h * scale), 'px'));
+  thumbDoc.selection.selectAll();
+  thumbDoc.selection.copy();
+  thumbDoc.close(SaveOptions.DONOTSAVECHANGES);
+
+  var schematicDoc = app.documents.add(UnitValue(dwidth, 'in'), UnitValue(dheight, 'in'), resolution, 'schematic', NewDocumentMode.RGB, DocumentFill.WHITE);
+
+  // paste the image so its top left sits at the grid's top left
+  var imageLayer = schematicDoc.paste();
+  imageLayer.name = 'image';
+  imageLayer.translate(ox - imageLayer.bounds[0].as('px'), oy - imageLayer.bounds[1].as('px'));
+
+  var wcolor = new SolidColor;
+  wcolor.rgb.hexValue = 'FFFFFF';
+
+  var strokeWidth = Math.max(1, Math.round(pw / 1600));
+
+  var gridLayer = schematicDoc.artLayers.add();
+  gridLayer.name = 'grid';
+  gridLayer.opacity = 50;
+
+  var tilenum = 1;
+
+  for (var y = 0; y < county; y++) {
+    for (var x = 0; x < countx; x++) {
+
+      // each tile is drawn as a whole page
+      var left = ox + dwidth * x * scale;
+      var top = oy + dheight * y * scale;
+      var right = left + dwidth * scale;
+      var bottom = top + dheight * scale;
+
+      // outline the tile, centred on the edge so neighbouring tiles share one line instead of doubling up
+      schematicDoc.activeLayer = gridLayer;
+      schematicDoc.selection.select([[left, top], [left, bottom], [right, bottom], [right, top]], SelectionType.REPLACE, 0, false);
+      schematicDoc.selection.stroke(scolor, strokeWidth, StrokeLocation.CENTER, ColorBlendMode.NORMAL, 100);
+      schematicDoc.selection.deselect();
+
+      // number it in the middle, sized to the tile
+      var fontpx = Math.min(right - left, bottom - top) * 0.3;
+
+      var textLayer = schematicDoc.artLayers.add();
+      textLayer.kind = LayerKind.TEXT;
+
+      var textItem = textLayer.textItem;
+      textItem.kind = TextType.POINTTEXT;
+
+      textItem.justification = Justification.CENTER;
+      textItem.color = scolor;
+      textItem.font = 'ArialMT';
+      textItem.size = fontpx * 72 / resolution;
+      textItem.contents = tilenum.toString();
+
+      textLayer.opacity = 50;
+
+      // point text is positioned by its baseline, so drop it by roughly half the cap height
+      textItem.position = [UnitValue((left + right) / 2, 'px'), UnitValue((top + bottom) / 2 + fontpx * 0.35, 'px')];
+
+      // white label behind the number so it reads over the image
+      var pad = fontpx * 0.15;
+      var tl = textLayer.bounds[0].as('px') - pad;
+      var tt = textLayer.bounds[1].as('px') - pad;
+      var tr = textLayer.bounds[2].as('px') + pad;
+      var tb = textLayer.bounds[3].as('px') + pad;
+
+      var labelLayer = schematicDoc.artLayers.add();
+      labelLayer.move(textLayer, ElementPlacement.PLACEAFTER);
+      schematicDoc.selection.select([[tl, tt], [tl, tb], [tr, tb], [tr, tt]], SelectionType.REPLACE, 0, false);
+      schematicDoc.selection.fill(wcolor);
+      schematicDoc.selection.deselect();
+      labelLayer.opacity = 80;
+
+      tilenum += 1;
+    }
+  }
+
+  preferences.rulerUnits = savedUnit;
+
+  return schematicDoc;
+}
+
 function processImage () {
   // all the strings that need localized
   //var strDeleteAllEmptyLayersHistoryStepName = localize("$$$/JavaScripts/DeleteAllEmptyLayers/Menu=Delete All Empty Layers" );
@@ -248,6 +362,13 @@ function processImage () {
       tilenum += 1;
     }
   }
+
+  // add the assembly schematic as the first page
+  var schematicDoc = makeSchematic(docRef, countx, county, dwidth, dheight, w, h);
+  var schematicFile = new File(docRef.path + '/0.psd');
+  schematicDoc.saveAs(schematicFile);
+  schematicDoc.close(SaveOptions.DONOTSAVECHANGES);
+  tempFileList.unshift(schematicFile);
 
   // close the source document
   app.activeDocument = docRef;
